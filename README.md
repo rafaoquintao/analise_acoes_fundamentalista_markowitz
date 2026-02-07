@@ -54,5 +54,6 @@ Inicie o dashboard:
 
 Bash
 streamlit run app_dashboard.py
+
 Conclusão do Backtest
 Nota do Autor: Durante o desenvolvimento, observou-se que a carteira personalizada superou significativamente o modelo puramente quantitativo (Elite) e o índice de referência. Isso demonstra que a combinação de filtros algorítmicos com o julgamento qualitativo de setores estratégicos gera o maior Alpha para o investidor.
