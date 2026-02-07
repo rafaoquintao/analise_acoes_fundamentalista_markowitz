@@ -3,6 +3,8 @@ import pandas as pd
 import plotly.express as px
 import os
 
+# Configuração da página
+
 st.set_page_config(
     page_title = "Dashboard de Análise de Ações",
     layout = "wide",
@@ -14,7 +16,7 @@ st.title("📊 Gestão de Portfólio e Stock Discovery")
 
 PATH_RANKING = "data_lake/gold/ranking_fundamentalista.parquet"
 PATH_PESOS = "data_lake/gold/alocacao_otimizada.parquet"
-PATH_ELITE = "data_lake/gold/carteira_elite.parquet"
+PATH_UNIVERSO = "data_lake/bronze/universo_b3.parquet"
 PATH_TIMING = "data_lake/gold/timing_elite.parquet"
 
 if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
@@ -46,16 +48,17 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
     
     # Visão 2: Oportunidades
     st.divider()
-    st.header("2. Discovery: Carteira Elite B3")
+    st.header("2. Discovery: Minha Carteira B3")
 
-    if os.path.exists(PATH_ELITE):
-        df_elite = pd.read_parquet(PATH_ELITE)
+    if os.path.exists(PATH_UNIVERSO):
+        df_elite = pd.read_parquet(PATH_UNIVERSO)
         df_timing = pd.read_parquet(PATH_TIMING)
+        df_elite = df_elite[df_elite['ticker'].isin(df_timing['ticker'].tolist())]
 
         # Merge para mostrar fundamentos + timing
         df_compra = pd.merge(df_elite, df_timing, on = 'ticker')
 
-        st.write(" Ativos da B3 que atendem aos critérios e o momento atual de compra (RSI):")
+        st.write(" Meus ativos e o momento atual de compra (RSI):")
 
         # Estilização básica para o RSI
         def color_rsi(val):
@@ -65,7 +68,7 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
         st.dataframe(df_compra[['ticker', 'p_l', 'roe', 
                                 'dividend_yield', 'rsi', 'status']].style.applymap(color_rsi, subset = ['status']))
 else:
-    st.warning("Aguardando a execução do pipeline... Executo o script principal primeiro.")
+    st.warning("Aguardando a execução do pipeline... Execute o script principal primeiro.")
 
 st.divider()
 st.header("📈 Backtest: Performance da Estratégia")

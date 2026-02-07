@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 import os
-from typing import List, Optional
+from typing import List
 import fundamentus
 
 def buscar_dados_financeiros(tickers: List[str]) -> pd.DataFrame:
@@ -183,11 +183,11 @@ def gerar_carteira_recomendada(df_universo: pd.DataFrame) -> pd.DataFrame:
     df = df_universo.copy()
     # Aplicando os filtros
     df_filtered = df[
-        (df['p_l'] > 0) & (df['p_l'] < 10) &
+        (df['p_l'] > 0) & (df['p_l'] < 15) &
         (df['p_vp'] < 1.5) &
         (df['div_patrimonial'] < 2) &
-        (df['dividend_yield'] > 0.05) & (df['dividend_yield'] < 0.15) &
-        (df['roe'] > 0.15) &
+        (df['dividend_yield'] > 0.05) & (df['dividend_yield'] < 0.2) &
+        (df['roe'] > 0.10) &
         (df['liq_diaria'] > 100000) &
         (df['patr_liquido'] > 100000000)
     ]
@@ -206,16 +206,23 @@ def analise_tecnica_rsi(ticker: str):
         return 50.0, "Erro nos Dados"
     
     delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window = 14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window = 14).mean()
+    # Separando os ganhos e perdas
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
 
-    rs = gain / loss
+    # Cálculo da Média Suavizada de Wilder (alpha = 1/periodo)
+    # O parâmetro 'com' (center of mass) é definido como period - 1 para equivaler ao Wilder
+    avg_gain = gain.ewm(com=13, min_periods=14).mean()
+    avg_loss = loss.ewm(com=13, min_periods=14).mean()
+
+
+    rs = avg_gain / avg_loss
     df['RSI'] = 100 - (100 / (1 + rs))
 
     rsi_atual = float(df['RSI'].iloc[-1])
 
-    status = "Compra (Sobrevendido)" if rsi_atual < 35 else \
-             "Venda (Sobrecomprado)" if rsi_atual > 65 else "Neutro"
+    status = "Compra (Sobrevendido)" if rsi_atual < 30 else \
+             "Venda (Sobrecomprado)" if rsi_atual > 70 else "Neutro"
     return round(rsi_atual, 2), status
 
 def buscar_dados_fundamentus() -> pd.DataFrame:
@@ -279,9 +286,13 @@ if __name__ == "__main__":
     carteira_atual = [
         'BBAS3.SA', 'CASH3.SA', 'CMIG4.SA','EMBJ3.SA','GPUS11.SA','ISAE4.SA',
         'ITSA4.SA', 'ITUB4.SA', 'LAVV3.SA', 'PETR4.SA', 'PINE4.SA','POMO3.SA',
-        'ROXO34.SA', 'VALE3.SA', 'VBBR3.SA', 'WEGE3.SA', 'CXCO11.SA', 'HGBS11.SA',
-        'HGLG11.SA', 'XPCI11.SA','XPML11.SA'  
+        'ROXO34.SA', 'VALE3.SA', 'VBBR3.SA', 'WEGE3.SA', 'NVDA','BUD', 'KO', 'AMZN',
+        'NU', 'KO', 'DIS' 
     ]
+    carteira_fii = [ 
+        'CXCO11.SA', 'HGBS11.SA',
+        'HGLG11.SA', 'XPCI11.SA','XPML11.SA' 
+        ]
     
     # Discovery Automático do Universo de Ações da B3
     universo_df = buscar_dados_fundamentus()
@@ -310,23 +321,23 @@ if __name__ == "__main__":
         df_silver = processar_dados_financeiros(carteira_atual)
         df_gold = analisar_dados_financeiros(df_silver)
         
-        # Análise técnica (timing para ativos da Elite)
-    if not df_elite.empty:
-        print("Calculando Timing (RSI) para carteira Elite...")
-        resultados_rsi = []
-        for t in df_elite['ticker'].tolist():
-            rsi_valor, rsi_status = analise_tecnica_rsi(t)
-            resultados_rsi.append({
-                "ticker": t,
-                "rsi": rsi_valor,
-                "status": rsi_status
-            })
-        df_timing = pd.DataFrame(resultados_rsi)
-        df_timing.to_parquet("data_lake/gold/timing_elite.parquet", index = False)
-        
-        realizar_backtest_comparativo(df_elite['ticker'].tolist(), carteira_atual)
+        # Análise técnica (timing para ativos da atual)
+        if not df_bronze.empty:
+            print("Calculando Timing (RSI) para carteira atual...")
+            resultados_rsi = []
+            for t in df_bronze['ticker'].tolist():
+                rsi_valor, rsi_status = analise_tecnica_rsi(t)
+                resultados_rsi.append({
+                    "ticker": t,
+                    "rsi": rsi_valor,
+                    "status": rsi_status
+                })
+            df_timing = pd.DataFrame(resultados_rsi)
+            df_timing.to_parquet("data_lake/gold/timing_elite.parquet", index = False)
+            
+            realizar_backtest_comparativo(df_elite['ticker'].tolist(), carteira_atual)
 
-        print("Pipeline de Análise de Ações concluído com sucesso!")
+            print("Pipeline de Análise de Ações concluído com sucesso!")
     else:
         print("Pipeline interrompido por falha na qualidade dos dados.")
 
