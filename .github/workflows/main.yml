@@ -2,12 +2,14 @@ name: Pipeline Financeiro Diário
 
 on:
   schedule:
-    - cron: '0 12 * * 1-5' # Roda às 09:00 BRT (12:00 UTC) de Seg a Sex
-  workflow_dispatch: # Permite rodar manualmente pelo site do GitHub
+    - cron: '0 12 * * 1-5' # Roda às 09:00 BRT
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Dá permissão para o robô salvar os arquivos .parquet
     steps:
       - uses: actions/checkout@v3
 
@@ -21,12 +23,12 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run Pipeline
-        run: python seu_script_principal.py
+        run: python analise_acoes.py # Nome corrigido aqui
 
       - name: Commit and Push changes
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add data_lake/
-          git commit -m "Dados atualizados: $(date +'%Y-%m-%d')" || exit 0
+          git commit -m "Dados atualizados via Action: $(date +'%Y-%m-%d')" || exit 0
           git push
