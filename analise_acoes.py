@@ -61,7 +61,10 @@ def processar_dados_financeiros(tickers: List[str]) -> pd.DataFrame:
     
     # Tratamento de dados (Data Cleaning)
     # ffill preenche gaps de dias sem negociação (comum em FIIs e ETFs)
-    df_limpo = df_precos.ffill().dropna(axis=1)
+    # bfill preenche gaps para ativos novos que não têm 2 anos de histórico
+    df_limpo = df_precos.ffill().bfill()
+    df_limpo = df_precos.dropna(axis=1, how="all") # Remove colunas que ficaram totalmente vazias (ativos que falharam no download)
+
     
     os.makedirs("data_lake/silver", exist_ok=True)
     df_limpo.to_parquet("data_lake/silver/precos_limpos.parquet")

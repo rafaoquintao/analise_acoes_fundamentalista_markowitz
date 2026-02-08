@@ -1,0 +1,18 @@
+version: '3.8'
+services:
+  # Serviço que processa os dados
+  pipeline:
+    build: .
+    volumes:
+      - ./data_lake:/app/data_lake
+
+  # Serviço do Dashboard
+  dashboard:
+    build: .
+    command: streamlit run app.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data_lake:/app/data_lake
+    depends_on:
+      - pipeline

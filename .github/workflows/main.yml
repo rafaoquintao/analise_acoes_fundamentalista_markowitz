@@ -1,0 +1,32 @@
+name: Pipeline Financeiro Diário
+
+on:
+  schedule:
+    - cron: '0 12 * * 1-5' # Roda às 09:00 BRT (12:00 UTC) de Seg a Sex
+  workflow_dispatch: # Permite rodar manualmente pelo site do GitHub
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run Pipeline
+        run: python seu_script_principal.py
+
+      - name: Commit and Push changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add data_lake/
+          git commit -m "Dados atualizados: $(date +'%Y-%m-%d')" || exit 0
+          git push
