@@ -4,7 +4,18 @@ import numpy as np
 from datetime import datetime
 import os
 from typing import List
-import fundamentus
+import fundamentus 
+import logging
+
+os.makedirs("logs", exist_ok = True)
+logging.basicConfig(
+    level  = logging.INFO,
+    format = "%(asctime)s - %(levelname)s - %(message)s",
+    handlers = [
+        logging.FileHandler("logs/pipeline_analise_acoes.log"),
+        logging.StreamHandler()
+    ]
+)
 
 def buscar_dados_financeiros(tickers: List[str]) -> pd.DataFrame:
     """
@@ -18,7 +29,7 @@ def buscar_dados_financeiros(tickers: List[str]) -> pd.DataFrame:
     lista_dados = []
     for t in tickers:
         try:
-            print(f'Buscando indicadores: {t}...')
+            logging.info(f'Buscando indicadores: {t}...')
             ativo = yf.Ticker(t)
             info = ativo.info
             
@@ -39,7 +50,7 @@ def buscar_dados_financeiros(tickers: List[str]) -> pd.DataFrame:
             }
             lista_dados.append(dados_ativo)
         except Exception as e:
-            print(f"Erro na ingestão de {t}: {e}")
+            logging.error(f"Erro na ingestão de {t}: {e}")
             
     df = pd.DataFrame(lista_dados)
     os.makedirs("data_lake/bronze", exist_ok=True)
@@ -55,7 +66,7 @@ def processar_dados_financeiros(tickers: List[str]) -> pd.DataFrame:
     Returns:
         pd.DataFrame: Preços de fechamento limpos e preenchidos.
     """
-    print("Baixando histórico de preços...")
+    logging.info("Baixando histórico de preços...")
     # Coleta 2 anos de histórico de fechamento ajustado
     df_precos = yf.download(tickers, period="2y", progress=False)['Close']
     
@@ -68,7 +79,7 @@ def processar_dados_financeiros(tickers: List[str]) -> pd.DataFrame:
     
     os.makedirs("data_lake/silver", exist_ok=True)
     df_limpo.to_parquet("data_lake/silver/precos_limpos.parquet")
-    print("Camada Silver: Preços históricos normalizados.")
+    logging.info("Camada Silver: Preços históricos normalizados.")
     return df_limpo
 
 def analisar_dados_financeiros(df_precos: pd.DataFrame, num_portfolios: int = 5000) -> pd.DataFrame:
@@ -87,7 +98,7 @@ def analisar_dados_financeiros(df_precos: pd.DataFrame, num_portfolios: int = 50
     resultados = np.zeros((3, num_portfolios))
     lista_pesos = []
 
-    print(f"Otimizando carteira para {len(tickers)} ativos...")
+    logging.info(f"Otimizando carteira para {len(tickers)} ativos...")
     for i in range(num_portfolios):
         pesos = np.random.random(len(tickers))
         pesos /= np.sum(pesos)
@@ -117,7 +128,7 @@ def analisar_dados_financeiros(df_precos: pd.DataFrame, num_portfolios: int = 50
     os.makedirs("data_lake/gold", exist_ok=True)
     df_pesos_ideais.to_parquet("data_lake/gold/alocacao_otimizada.parquet", index=False)
     
-    print("Sucesso: Tabela de alocação otimizada gerada na Gold!")
+    logging.info("Sucesso: Tabela de alocação otimizada gerada na Gold!")
     return df_pesos_ideais
 
 def validar_camada_bronze(caminho_arquivo: str) -> bool:
@@ -132,7 +143,7 @@ def validar_camada_bronze(caminho_arquivo: str) -> bool:
         df = pd.read_parquet(caminho_arquivo)
         # Check 1: O arquivo está vazio?
         if df.empty:
-            print("Falha: Arquivo Bronze está vazio.")
+            logging.error("Falha: Arquivo Bronze está vazio.")
             return False
         # Check 2: Colunas essenciais presentes?
         colunas_essenciais = ["ticker", "data_coleta", "p_l", "p_vp",
@@ -140,18 +151,18 @@ def validar_camada_bronze(caminho_arquivo: str) -> bool:
                                "div_patrimonial", "liq_diaria", "patr_liquido"]
         for col in colunas_essenciais:
             if col not in df.columns:
-                print(f"Falha: Coluna essencial '{col}' ausente.")
+                logging.error(f"Falha: Coluna essencial '{col}' ausente.")
                 return False
         # Check 3: Temos valores nulos nos campos críticos?
         nulos = df['p_l'].isnull().sum()
         if nulos > 0:
-            print(f"Aviso: Encontrados {nulos} tickers com P/L nulo.")
+            logging.warning(f"Aviso: Encontrados {nulos} tickers com P/L nulo.")
         
-        print(" Data quality check: Aprovado!")
+        logging.info(" Data quality check: Aprovado!")
         return True
     
     except Exception as e:
-        print(f"Falha na validação da camada Bronze: {e}")
+        logging.error(f"Falha na validação da camada Bronze: {e}")
         return False
 
 def gerar_ranking_fundamentalista(df_bronze: pd.DataFrame) -> pd.DataFrame:
@@ -183,7 +194,12 @@ def gerar_carteira_recomendada(df_universo: pd.DataFrame) -> pd.DataFrame:
     """
     Aplica os filtros fundamentalistas rígidos para selelcionar os 20 tickers 'Elite '   
     """
+    logging.info("Gerando carteira recomendada (Elite Fundamentalista)...")
     df = df_universo.copy()
+    if df.empty:
+        logging.error("Falha: Arquivo Universo B3 está vazio.")
+        return pd.DataFrame()
+
     # Aplicando os filtros
     df_filtered = df[
         (df['p_l'] > 0) & (df['p_l'] < 15) &
@@ -195,6 +211,7 @@ def gerar_carteira_recomendada(df_universo: pd.DataFrame) -> pd.DataFrame:
         (df['patr_liquido'] > 100000000)
     ]
     recomendada = df_filtered.sort_values(by = 'roe', ascending = False).head(20)
+    logging.info(f"Carteira Elite gerada com {len(recomendada)} ativos após aplicação dos filtros.")
     return recomendada
 
 def analise_tecnica_rsi(ticker: str):
@@ -206,6 +223,7 @@ def analise_tecnica_rsi(ticker: str):
     df = yf.download(ticker, period = "3mo", progress = False)
     # Caso o download falhe ou venha vazio
     if df.empty:
+        logging.error(f"Falha ao baixar dados para {ticker}. Retornando RSI neutro.")
         return 50.0, "Erro nos Dados"
     
     delta = df['Close'].diff()
@@ -233,38 +251,41 @@ def buscar_dados_fundamentus() -> pd.DataFrame:
     Busca TODOS  os ativos da B3 com seus indicadores fundamentalistas.
     Camada Bronze - Discovery Automático.
     """
-    print("Buscando dados do Fundamentus...")
+    logging.info("Buscando dados do Fundamentus...")
     # Retorna um DataFrame onde o índice é o ticker
-    df = fundamentus.get_resultado()
-    df = df.reset_index()
+    try:    
+        df = fundamentus.get_resultado()
+        df = df.reset_index()
+        # Padronizando as colunas para o filtro (mapping Fundamentus -> Nosso padrão)
+        df = df.rename(columns={
+            'papel': 'ticker', 
+            'pl': 'p_l',
+            'pvp': 'p_vp',
+            'dy': 'dividend_yield',
+            'divbpatr': 'div_patrimonial',
+            'liq2m': 'liq_diaria',
+            'patrliq': 'patr_liquido',
+            'roe': 'roe',
+        })
+        # Adicionando o sufixo .SA para compatibilidade com yfinance se precisar
+        df['ticker'] = df['ticker'].apply(lambda x: x + '.SA')
 
-    # Padronizando as colunas para o filtro (mapping Fundamentus -> Nosso padrão)
-    df = df.rename(columns={
-        'papel': 'ticker', 
-        'pl': 'p_l',
-        'pvp': 'p_vp',
-        'dy': 'dividend_yield',
-        'divbpatr': 'div_patrimonial',
-        'liq2m': 'liq_diaria',
-        'patrliq': 'patr_liquido',
-        'roe': 'roe',
-    })
-    # Adicionando o sufixo .SA para compatibilidade com yfinance se precisar
-    df['ticker'] = df['ticker'].apply(lambda x: x + '.SA')
-
-    os.makedirs("data_lake/bronze", exist_ok = True)
-    df.to_parquet(f"data_lake/bronze/universo_b3.parquet", index =  False)
+        os.makedirs("data_lake/bronze", exist_ok = True)
+        df.to_parquet(f"data_lake/bronze/universo_b3.parquet", index =  False)
+        logging.info("Sucesso: Dados do Fundamentus salvos na camada Bronze!")
+    except Exception as e:
+        logging.error(f"Erro ao buscar dados do Fundamentus: {e}")
     return df
 
 def realizar_backtest_comparativo( tickers_elite: List[str], minha_carteira: List[str]):
     """
     Compara o desempenho: Carteira Elite vs. Minha Carteira vs. IBOVESPA.
     """
-    print("Iniciando Backtest Comparativo Triplo (12 meses)...")
+    logging.info("Iniciando Backtest Comparativo Triplo (12 meses)...")
     
     # Unificamos todos os tickers para um único download (otimiza performance)
     todos_tickers = list(set(tickers_elite + minha_carteira + ['^BVSP']))
-    df_precos = yf.download(todos_tickers, period="1y", progress=False)['Close']
+    df_precos = yf.download(todos_tickers, period="2y", progress=False)['Close']
     
     # Tratamento inicial
     df_precos = df_precos.ffill()
@@ -281,7 +302,7 @@ def realizar_backtest_comparativo( tickers_elite: List[str], minha_carteira: Lis
     
     # Salva na Gold
     df_final.to_parquet("data_lake/gold/backtest_performance.parquet")
-    print(" Backtest Triplo gerado com sucesso!")
+    logging.info(" Backtest Triplo gerado com sucesso!")
 
 # --- ORQUESTRAÇÃO ---
 if __name__ == "__main__":
@@ -303,7 +324,7 @@ if __name__ == "__main__":
     # Filtro Elite Fundamentalista
     df_elite = gerar_carteira_recomendada(universo_df)
     df_elite.to_parquet("data_lake/gold/carteira_elite.parquet", index = False)
-    print(f" Camada Ouro: Carteira Elite gerada com {len(df_elite)} ativos!")
+    logging.info(f" Camada Ouro: Carteira Elite gerada com {len(df_elite)} ativos!")
 
     
     # Processamento da Carteira Atual
@@ -312,7 +333,7 @@ if __name__ == "__main__":
     # validação de qualidade dos dados
     data_hoje = datetime.now().strftime('%Y%m%d')
     caminho_bronze = f"data_lake/bronze/fundamentalista_{data_hoje}.parquet"
-    print(f"Iniciando validação de qualidade: {caminho_bronze}...")
+    logging.info(f"Iniciando validação de qualidade: {caminho_bronze}...")
 
     if validar_camada_bronze(caminho_bronze):
 
@@ -326,7 +347,7 @@ if __name__ == "__main__":
         
         # Análise técnica (timing para ativos da atual)
         if not df_bronze.empty:
-            print("Calculando Timing (RSI) para carteira atual...")
+            logging.info("Calculando Timing (RSI) para carteira atual...")
             resultados_rsi = []
             for t in df_bronze['ticker'].tolist():
                 rsi_valor, rsi_status = analise_tecnica_rsi(t)
@@ -340,7 +361,7 @@ if __name__ == "__main__":
             
             realizar_backtest_comparativo(df_elite['ticker'].tolist(), carteira_atual)
 
-            print("Pipeline de Análise de Ações concluído com sucesso!")
+            logging.info("Pipeline de Análise de Ações concluído com sucesso!")
     else:
-        print("Pipeline interrompido por falha na qualidade dos dados.")
+        logging.warning("Pipeline interrompido por falha na qualidade dos dados.")
 

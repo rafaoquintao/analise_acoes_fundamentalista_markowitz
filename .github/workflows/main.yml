@@ -2,7 +2,7 @@ name: Pipeline Financeiro Diário
 
 on:
   schedule:
-    - cron: '0 12 * * 1-5' # Roda às 09:00 BRT
+    - cron: '0 21 * * 1-5' # Roda às 18:00 BRT
   workflow_dispatch:
 
 jobs:
@@ -32,3 +32,10 @@ jobs:
           git add data_lake/
           git commit -m "Dados atualizados via Action: $(date +'%Y-%m-%d')" || exit 0
           git push
+
+      - name: Upload Logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-logs
+          path: logs/pipeline_analise_acoes.log
+          retention-days: 7 # O log apaga sozinho depois de 7 dias
