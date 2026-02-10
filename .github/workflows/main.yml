@@ -50,13 +50,18 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-                
-          # 1. Puxa as mudanças mais recentes (como o seu novo .yml) antes de tentar salvar
-          git pull origin main --rebase
           
-          # 2. Adiciona os arquivos gerados pelo robô
+          # 1. Garante que o robô saiba de todas as mudanças remotas
+          git fetch origin main
+          
+          # 2. Adiciona os arquivos gerados (Gold e Logs)
           git add data_lake/gold/ logs/
           
-          # 3. Commita e envia
-          git commit -m "Dados atualizados via Action: $(date +'%Y-%m-%d')" || exit 0
-          git push    
+          # 3. Tenta commitar. Se não houver nada novo, ele ignora sem dar erro.
+          git commit -m "Dados atualizados via Action: $(date +'%Y-%m-%d')" || echo "Sem mudanças para commitar"
+          
+          # 4. O segredo: Faz o rebase para colocar o commit do robô no topo do seu
+          git pull origin main --rebase
+          
+          # 5. Agora sim, envia com segurança
+          git push origin main   
