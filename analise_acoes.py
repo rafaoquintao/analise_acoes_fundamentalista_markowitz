@@ -289,33 +289,39 @@ def buscar_dados_fundamentus() -> pd.DataFrame:
         logging.error(f"Erro ao buscar dados do Fundamentus: {e}")
     return df
 
-def realizar_backtest_comparativo( tickers_elite: List[str], minha_carteira: List[str]):
-    """
-    Compara o desempenho: Carteira Elite vs. Minha Carteira vs. IBOVESPA.
-    """
+def realizar_backtest_comparativo(tickers_elite: List[str], minha_carteira: List[str]):
     logging.info("Iniciando Backtest Comparativo Triplo (12 meses)...")
     
-    # Unificamos todos os tickers para um único download (otimiza performance)
+    # 1. Download
     todos_tickers = list(set(tickers_elite + minha_carteira + ['^BVSP']))
     df_precos = yf.download(todos_tickers, period="2y", progress=False)['Close']
     
-    # Tratamento inicial
-    df_precos = df_precos.ffill()
+    # 2. Tratamento anti-erro: Remove colunas totalmente vazias e preenche buracos
+    df_precos = df_precos.dropna(axis=1, how='all').ffill().bfill()
     
-    # Normalização Base 100 (Evolução relativa)
+    # 3. Normalização Base 100 
+    # Usamos .iloc[0] mas garantimos que não seja zero/NaN para não explodir o cálculo
     df_norm = (df_precos / df_precos.iloc[0]) * 100
     
-    # Cálculo das Médias (Estratégias Equipesadas)
-    df_norm['CARTEIRA_ELITE'] = df_norm[tickers_elite].mean(axis=1)
-    df_norm['MINHA_CARTEIRA'] = df_norm[minha_carteira].mean(axis=1)
+    # 4. Criamos um DataFrame NOVO só para o resultado final
+    # Isso evita que colunas de tickers individuais "vazem" para o gráfico
+    df_final = pd.DataFrame(index=df_norm.index)
     
-    # Selecionamos apenas as colunas de comparação
-    df_final = df_norm[['^BVSP', 'CARTEIRA_ELITE', 'MINHA_CARTEIRA']]
+    # Calculamos as médias apenas com os tickers que realmente foram baixados
+    tickers_elite_ok = [t for t in tickers_elite if t in df_norm.columns]
+    minha_carteira_ok = [t for t in minha_carteira if t in df_norm.columns]
     
+    df_final['IBOVESPA'] = df_norm['^BVSP']
+    df_final['CARTEIRA_ELITE'] = df_norm[tickers_elite_ok].mean(axis=1)
+    df_final['MINHA_CARTEIRA'] = df_norm[minha_carteira_ok].mean(axis=1)
+    
+    # 5. Dropna final para garantir que o gráfico não tenha vácuo no início
+    df_final = df_final.dropna()
+
     # Salva na Gold
     df_final.to_parquet("data_lake/gold/backtest_performance.parquet")
-    logging.info(" Backtest Triplo gerado com sucesso!")
-
+    logging.info(f"Backtest Triplo gerado com sucesso! Colunas: {df_final.columns.tolist()}")
+    
 # --- ORQUESTRAÇÃO ---
 if __name__ == "__main__":
    # Definindo a carteira atual
