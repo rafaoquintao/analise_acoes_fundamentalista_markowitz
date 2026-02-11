@@ -8,6 +8,7 @@ import fundamentus
 import logging
 import sys
 import random
+from pypfopt import EfficientFrontier, risk_models, expected_returns, objective_functions
 
 np.random.seed(42)
 random.seed(42)
@@ -98,54 +99,48 @@ def processar_dados_financeiros(tickers: List[str]) -> pd.DataFrame:
     logging.info("Camada Silver: Preços históricos normalizados.")
     return df_limpo
 
-def analisar_dados_financeiros(df_precos: pd.DataFrame, num_portfolios: int = 5000) -> pd.DataFrame:
+def analisar_dados_financeiros(df_precos: pd.DataFrame) -> pd.DataFrame:
     """
-    Calcula a Fronteira Eficiente e identifica a melhor alocação de ativos.
+    Otimização Numérica (Markowitz) com Regularização L2 para maior estabilidade.
+    """
+    logging.info(f"Otimizando carteira profissional para {len(df_precos.columns)} ativos...")
+
+    # 1. Modelagem de Retorno e Risco
+    # Usa o 'mean_historical_return' e o 'CovarianceShrinkage' para dados mais robustos
+    mu = expected_returns.mean_historical_return(df_precos)
+    S = risk_models.CovarianceShrinkage(df_precos).ledoit_wolf()
+
+    # 2. Configuração do Otimizador
+    ef = EfficientFrontier(mu, S)
+
+    # 3. REGULARIZAÇÃO L2 
+    # Gamma=0.1 evita que o modelo concentre tudo em poucos ativos
+    ef.add_objective(objective_functions.L2_reg, gamma=0.1)
+
+    # 4. Busca pelo Sharpe Máximo
+    try:
+        _ = ef.max_sharpe()
+        # Limpa pesos irrelevantes (menores que 1%)
+        cleaned_weights = ef.clean_weights(cutoff=0.01)
+        logging.info("Otimização concluída via Programação Quadrática (Max Sharpe).")
+    except Exception as e:
+        logging.warning(f"Falha no Max Sharpe ({e}). Calculando Variância Mínima...")
+        _ = ef.min_volatility()
+        cleaned_weights = ef.clean_weights()
+
+    # 5. Formatação dos Resultados para a Camada Gold
+    df_pesos_ideais = pd.DataFrame(
+        list(cleaned_weights.items()), 
+        columns=["ticker", "Peso_Ideal"]
+    ).sort_values(by="Peso_Ideal", ascending=False)
     
-    Args:
-        df_precos: DataFrame da camada Silver com preços limpos.
-        num_portfolios: Quantidade de simulações.
-    """
-    retornos = np.log(df_precos / df_precos.shift(1)).dropna()
-    media_retorno = retornos.mean() * 252
-    matriz_cov = retornos.cov() * 252
-    tickers = df_precos.columns
+    # Converte para escala 0-100
+    df_pesos_ideais["Peso_Ideal"] = (df_pesos_ideais["Peso_Ideal"] * 100).round(2)
 
-    resultados = np.zeros((3, num_portfolios))
-    lista_pesos = []
-
-    logging.info(f"Otimizando carteira para {len(tickers)} ativos...")
-    for i in range(num_portfolios):
-        pesos = np.random.random(len(tickers))
-        pesos /= np.sum(pesos)
-        lista_pesos.append(pesos)
-        
-        retorno_p = np.sum(media_retorno * pesos)
-        volatilidade_p = np.sqrt(np.dot(pesos.T, np.dot(matriz_cov, pesos)))
-        
-        resultados[0,i] = retorno_p
-        resultados[1,i] = volatilidade_p
-        resultados[2,i] = retorno_p / volatilidade_p # Sharpe Ratio
-
-    # 1. Gerar DataFrame da Fronteira Eficiente (Gráfico de dispersão)
-    df_gold_simulacao = pd.DataFrame(resultados.T, columns=['Retorno', 'Volatilidade', 'Sharpe_Ratio'])
-    df_gold_simulacao.to_parquet("data_lake/gold/simulacao_markowitz.parquet", index=False)
-
-    # 2. Identificar o Melhor Portfólio (Sharpe Máximo) e seus pesos
-    indice_melhor_sharpe = df_gold_simulacao['Sharpe_Ratio'].idxmax()
-    melhores_pesos = lista_pesos[indice_melhor_sharpe]
-
-    df_pesos_ideais = pd.DataFrame({
-        "ticker": tickers,
-        "Peso_Ideal": [round(p * 100, 2) for p in melhores_pesos]
-    }).sort_values(by="Peso_Ideal", ascending=False)
-
-    # Salva o arquivo que o Dashboard estava procurando
+    # Persistência
     os.makedirs("data_lake/gold", exist_ok=True)
     df_pesos_ideais.to_parquet("data_lake/gold/alocacao_otimizada.parquet", index=False)
     
-    # No final da sua função de Markowitz
-    logging.info("Sucesso: Tabela de alocação otimizada gerada na Gold!")
     return df_pesos_ideais
 
 def validar_camada_bronze(caminho_arquivo: str) -> bool:
