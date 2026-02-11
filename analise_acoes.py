@@ -7,6 +7,10 @@ from typing import List
 import fundamentus 
 import logging
 import sys
+import random
+
+np.random.seed(42)
+random.seed(42)
 
 # 1. Garante a pasta
 os.makedirs("logs", exist_ok=True)
@@ -140,6 +144,7 @@ def analisar_dados_financeiros(df_precos: pd.DataFrame, num_portfolios: int = 50
     os.makedirs("data_lake/gold", exist_ok=True)
     df_pesos_ideais.to_parquet("data_lake/gold/alocacao_otimizada.parquet", index=False)
     
+    # No final da sua função de Markowitz
     logging.info("Sucesso: Tabela de alocação otimizada gerada na Gold!")
     return df_pesos_ideais
 
@@ -321,7 +326,7 @@ def realizar_backtest_comparativo(tickers_elite: List[str], minha_carteira: List
     # Salva na Gold
     df_final.to_parquet("data_lake/gold/backtest_performance.parquet")
     logging.info(f"Backtest Triplo gerado com sucesso! Colunas: {df_final.columns.tolist()}")
-    
+
 # --- ORQUESTRAÇÃO ---
 if __name__ == "__main__":
    # Definindo a carteira atual
