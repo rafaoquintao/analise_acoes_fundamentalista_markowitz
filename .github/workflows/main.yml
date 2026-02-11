@@ -40,13 +40,14 @@ jobs:
           # 1. Adiciona TUDO o que foi gerado pelo Python (evita o erro de unstaged changes)
           git add data_lake/gold/ data_lake/silver/ logs/
           
-          # 2. Faz o pull rebase com estratégia de resolução automática
+          # 2. Tenta commitar. Se não houver nada novo, ele apenas avisa e segue em frente.
+          git commit -m "Dados atualizados via Action: $(date +'%Y-%m-%d')" || echo "Sem mudanças para commitar"
+          
+          # 3. Faz o pull rebase com estratégia de resolução automática
           # O -X ours diz: "Se houver conflito no arquivo de dados, mantenha o que o robô acabou de gerar"
           git pull origin main --rebase -X ours
           
-          # 3. Tenta commitar. Se não houver nada novo, ele apenas avisa e segue em frente.
-          git commit -m "Dados atualizados via Action: $(date +'%Y-%m-%d')" || echo "Sem mudanças para commitar"
-          
+         
           # 4. Envia com segurança
           git push origin main
 
