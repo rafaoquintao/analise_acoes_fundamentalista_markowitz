@@ -7,17 +7,26 @@ from typing import List
 import fundamentus 
 import logging
 
-os.makedirs("logs", exist_ok = True)
-log_file = "logs/pipeline_analise_acoes.log"
+# 1. Garante a pasta
+os.makedirs("logs", exist_ok=True)
+log_path = "logs/pipeline_analise_acoes.log"
 
-logging.basicConfig(
-    level  = logging.INFO,
-    format = "%(asctime)s - %(levelname)s - %(message)s",
-    handlers = [
-        logging.FileHandler(log_file, mode='w', encoding='utf-8'),
-        logging.StreamHandler()
-    ]
-)
+# 2. Configuração com Flush forçado
+# O segredo aqui é que vamos usar um StreamHandler apontando para o arquivo
+# ou garantir que o FileHandler não use buffer.
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Handler para o arquivo (Modo 'w' para sobrescrever e ver se funciona)
+file_handler = logging.FileHandler(log_path, mode='w', encoding='utf-8')
+file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+
+# Handler para o console (GitHub Actions Logs)
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setFormatter(logging.Formatter("%(message)s"))
+
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
 
 def buscar_dados_financeiros(tickers: List[str]) -> pd.DataFrame:
     """
