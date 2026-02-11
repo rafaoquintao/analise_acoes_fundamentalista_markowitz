@@ -5,7 +5,7 @@ import os
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
-    page_title="Dashboard Financeiro Inteligente",
+    page_title="Dashboard Financeiro Intelligence",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -25,38 +25,47 @@ MAPEAMENTO_BDR = {
     'NU': 'ROXO34', 'AAPL': 'AAPL34', 'GOOGL': 'GOGL34'
 }
 
+def normalizar_ticker(t):
+    """Ajusta tickers para o padrão da Gold (com .SA e BDRs)"""
+    t = str(t).strip().upper()
+    t = MAPEAMENTO_BDR.get(t, t)
+    # Se for ativo brasileiro (número no ticker) e sem sufixo, adiciona .SA
+    if any(char.isdigit() for char in t) and not t.endswith('.SA') and len(t) <= 6:
+        return f"{t}.SA"
+    return t
+
 st.title("📊 Gestão de Portfólio e Stock Discovery")
 st.markdown("---")
 
-# Verificação de arquivos críticos
+# Verificação de arquivos críticos da camada Gold
 if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
-    # Carregamento de dados Gold
     df_rank = pd.read_parquet(PATH_RANKING)
     df_peso = pd.read_parquet(PATH_PESOS)
     
-    # --- PROCESSAMENTO DE CUSTÓDIA E REBALANCEAMENTO ---
+    # Garantir que tickers na Gold também estejam normalizados para o merge
+    df_rank['ticker'] = df_rank['ticker'].apply(normalizar_ticker)
+    df_peso['ticker'] = df_peso['ticker'].apply(normalizar_ticker)
+
+    # --- PROCESSAMENTO DE CUSTÓDIA ---
     if os.path.exists(PATH_CUSTODIA):
         df_custodia = pd.read_csv(PATH_CUSTODIA)
-        df_custodia['ticker'] = df_custodia['ticker'].str.strip().str.upper()
+        df_custodia['ticker'] = df_custodia['ticker'].apply(normalizar_ticker)
         
-        # Converte tickers americanos para BDRs antes do merge
-        df_custodia['ticker'] = df_custodia['ticker'].apply(lambda x: MAPEAMENTO_BDR.get(x, x))
-        
-        # Merge com preços atuais da camada Gold
+        # Merge com preços (df_rank deve conter a coluna 'preco')
         df_rebal = pd.merge(df_custodia, df_rank[['ticker', 'preco']], on='ticker', how='left')
         df_rebal['preco'] = df_rebal['preco'].fillna(0)
         
-        # Cálculo de Valor de Mercado
+        # Valor de Mercado e Patrimônio
         df_rebal['Valor_Total_Ativo'] = df_rebal['quantidade'].astype(float) * df_rebal['preco']
         total_patrimonio = df_rebal['Valor_Total_Ativo'].sum()
         
-        # Cálculo de Peso Atual
+        # Peso Atual
         df_rebal['Peso_Atual'] = (df_rebal['Valor_Total_Ativo'] / total_patrimonio * 100) if total_patrimonio > 0 else 0
         
         # Merge final com Markowitz
         df_final = pd.merge(df_peso, df_rebal[['ticker', 'Peso_Atual', 'quantidade']], on='ticker', how='outer').fillna(0)
     else:
-        st.warning(f"Arquivo {PATH_CUSTODIA} não encontrado. Usando pesos zerados.")
+        st.error(f"Arquivo de custódia não encontrado em: {PATH_CUSTODIA}")
         df_final = df_peso.copy()
         df_final['Peso_Atual'] = 0.0
         total_patrimonio = 0
@@ -64,17 +73,18 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
     df_final['Diferenca'] = df_final['Peso_Ideal'] - df_final['Peso_Atual']
     df_total = pd.merge(df_final, df_rank, on='ticker', how='inner')
 
-    # --- VISÃO 1: REBALANCEAMENTO E APORTES ---
+    # --- VISÃO 1: MÉTRICAS E REBALANCEAMENTO ---
     st.header("1. ⚖️ Rebalanceamento e Simulação de Aporte")
     
     m1, m2, m3 = st.columns(3)
     m1.metric("Patrimônio Total", f"R$ {total_patrimonio:,.2f}")
     
-    # Identifica maiores gaps
-    ticker_compra = df_final.loc[df_final['Diferenca'].idxmax(), 'ticker']
-    ticker_venda = df_final.loc[df_final['Diferenca'].idxmin(), 'ticker']
-    m2.metric("Aportar em (Maior Gap)", ticker_compra)
-    m3.metric("Reduzir em (Maior Excesso)", ticker_venda)
+    # Lógica de Gaps
+    if not df_final.empty:
+        ticker_compra = df_final.loc[df_final['Diferenca'].idxmax(), 'ticker']
+        ticker_venda = df_final.loc[df_final['Diferenca'].idxmin(), 'ticker']
+        m2.metric("Aportar em (Maior Gap)", ticker_compra)
+        m3.metric("Reduzir em (Maior Excesso)", ticker_venda)
 
     col_sim, col_graph = st.columns([1.2, 2])
 
@@ -83,22 +93,21 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
         valor_aporte = st.number_input("Valor para investir (R$):", min_value=0.0, value=1000.0, step=100.0)
         
         df_compra_sug = df_final[df_final['Diferenca'] > 0].copy()
-        if not df_compra_sug.empty:
+        if not df_compra_sug.empty and valor_aporte > 0:
             total_gap = df_compra_sug['Diferenca'].sum()
             df_compra_sug['Alocacao_R$'] = (df_compra_sug['Diferenca'] / total_gap) * valor_aporte
-            df_compra_sug = pd.merge(df_compra_sug, df_rank[['ticker', 'preco']], on='ticker')
             
-            # Arredondamento: Inteiro para B3, Float para Stocks/BDRs se necessário
-            df_compra_sug['Qtd_Sugerida'] = (df_compra_sug['Alocacao_R$'] / df_compra_sug['preco']).astype(int)
+            # Cálculo de quantidades usando o preço da Gold
+            df_compra_sug = pd.merge(df_compra_sug, df_rank[['ticker', 'preco']], on='ticker')
+            df_compra_sug['Qtd_Sugerida'] = (df_compra_sug['Alocacao_R$'] / df_compra_sug['preco']).fillna(0).astype(int)
             
             st.write(f"Com R$ {valor_aporte:,.2f}, compre:")
             st.dataframe(df_compra_sug.query("Qtd_Sugerida > 0")[['ticker', 'Qtd_Sugerida', 'Alocacao_R$']], use_container_width=True)
-        else:
-            st.info("Carteira já está equilibrada.")
 
     with col_graph:
         fig_rebal = px.bar(
-            df_final, x='ticker', y='Diferenca',
+            df_final.sort_values(by='Diferenca', ascending=False), 
+            x='ticker', y='Diferenca',
             title="Desvio do Ideal (Peso Ideal - Peso Atual)",
             color='Diferenca', color_continuous_scale='RdYlGn'
         )
@@ -112,62 +121,42 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
         df_total, x='score', y='Peso_Ideal',
         size='dividend_yield', text='ticker', color='Diferenca',
         color_continuous_scale='RdYlGn',
-        title="Score Fundamentos vs Alocação Sugerida (Cor = Necessidade de Compra)",
-        labels={'score': 'Saúde Financeira (Score)', 'Peso_Ideal': '% Alocação Markowitz'}
+        title="Score Fundamentos vs Alocação Sugerida",
+        labels={'score': 'Saúde Financeira (Score)', 'Peso_Ideal': '% Alocação Ideal'}
     )
     st.plotly_chart(fig_decisao, use_container_width=True)
 
-    # --- VISÃO 3: DISCOVERY & TIMING ---
-    st.divider()
-    st.header("3. 🔍 Discovery: Meus Ativos B3 & Timing")
-
-    if os.path.exists(PATH_UNIVERSO) and os.path.exists(PATH_TIMING):
-        df_universo = pd.read_parquet(PATH_UNIVERSO)
+    # --- VISÃO 3: TIMING (RSI) ---
+    if os.path.exists(PATH_TIMING):
+        st.divider()
+        st.header("3. 🔍 Discovery: Timing de Entrada (RSI)")
         df_timing = pd.read_parquet(PATH_TIMING)
+        df_timing['ticker'] = df_timing['ticker'].apply(normalizar_ticker)
         
-        # Merge para mostrar fundamentos + timing (RSI)
-        df_compra = pd.merge(df_universo, df_timing, on='ticker')
-        
-        st.write("Análise de Momento de Compra (RSI):")
-
         def color_status(val):
-            color = 'green' if 'Compra' in val else 'red' if 'Venda' in val else 'white'
-            return f'background-color: {color}; color: black'
+            color = '#2ecc71' if 'Compra' in str(val) else '#e74c3c' if 'Venda' in str(val) else 'None'
+            return f'background-color: {color}'
         
         st.dataframe(
-            df_compra[['ticker', 'p_l', 'roe', 'dividend_yield', 'rsi', 'status']]
-            .style.applymap(color_status, subset=['status']),
+            df_timing[['ticker', 'rsi', 'status']].style.applymap(color_status, subset=['status']),
             use_container_width=True
         )
 
+    # --- VISÃO 4: BACKTEST ---
+    if os.path.exists(PATH_BACKTEST):
+        st.divider()
+        st.header("📈 Backtest: Performance Histórica")
+        df_b = pd.read_parquet(PATH_BACKTEST)
+        
+        fig_b = px.line(
+            df_b, 
+            title="Evolução Patrimonial (Base 100)",
+            color_discrete_map={'IBOVESPA': 'gray', 'CARTEIRA_ELITE': 'blue', 'MINHA_CARTEIRA': 'green'}
+        )
+        fig_b.update_layout(hovermode="x unified")
+        st.plotly_chart(fig_b, use_container_width=True)
+
 else:
-    st.error("Erro: Arquivos da camada Gold não encontrados. Execute o pipeline de dados primeiro.")
+    st.error("Erro: Arquivos da camada Gold não encontrados. Execute o pipeline `analise_acoes.py` primeiro.")
 
-# --- VISÃO 4: BACKTEST ---
-st.divider()
-st.header("📈 Backtest: Performance Histórica")
-
-if os.path.exists(PATH_BACKTEST):
-    df_b = pd.read_parquet(PATH_BACKTEST)
-    # Garante que os nomes fiquem iguais aos do seu README
-    df_b.columns = ['IBOVESPA', 'ESTRATÉGIA ELITE', 'MINHA CARTEIRA']
-    
-    fig_b = px.line(
-        df_b, 
-        labels={'value': 'Evolução (Base 100)', 'index': 'Data'},
-        title="Comparativo de Retorno Acumulado (Últimos 24 meses)",
-        color_discrete_map={
-            'IBOVESPA': '#808080',      # Cinza
-            'CARTEIRA_ELITE': '#0000FF', # Azul
-            'MINHA_CARTEIRA': '#00FF00'  # Verde
-        }
-    )
-    
-    # Melhora a legenda e eixos
-    fig_b.update_layout(hovermode="x unified")
-    st.plotly_chart(fig_b, use_container_width=True)
-else:
-    st.info("Execute o Backtest no script principal para visualizar os resultados aqui.")
-
-st.sidebar.markdown("### ⚙️ Configurações")
-st.sidebar.write("Os dados são atualizados conforme a execução do pipeline nas camadas Bronze, Silver e Gold.")
+st.sidebar.info("Atualizado em: " + pd.Timestamp.now().strftime("%d/%m/%Y %H:%M"))
