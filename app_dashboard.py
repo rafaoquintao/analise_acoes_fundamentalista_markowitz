@@ -93,16 +93,28 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
         valor_aporte = st.number_input("Valor para investir (R$):", min_value=0.0, value=1000.0, step=100.0)
         
         df_compra_sug = df_final[df_final['Diferenca'] > 0].copy()
+        
         if not df_compra_sug.empty and valor_aporte > 0:
             total_gap = df_compra_sug['Diferenca'].sum()
             df_compra_sug['Alocacao_R$'] = (df_compra_sug['Diferenca'] / total_gap) * valor_aporte
             
-            # Cálculo de quantidades usando o preço da Gold
+            # Merge com preços
             df_compra_sug = pd.merge(df_compra_sug, df_rank[['ticker', 'preco']], on='ticker')
             df_compra_sug['Qtd_Sugerida'] = (df_compra_sug['Alocacao_R$'] / df_compra_sug['preco']).fillna(0).astype(int)
             
+            # --- LÓGICA DE AGRUPAMENTO (EXECUTAR ANTES DE EXIBIR) ---
+            df_exibicao = df_compra_sug.query("Qtd_Sugerida > 0").groupby('ticker').agg({
+                'Qtd_Sugerida': 'sum',
+                'Alocacao_R$': 'sum'
+            }).reset_index()
+            
+           
             st.write(f"Com R$ {valor_aporte:,.2f}, compre:")
-            st.dataframe(df_compra_sug.query("Qtd_Sugerida > 0")[['ticker', 'Qtd_Sugerida', 'Alocacao_R$']], use_container_width=True)
+            st.dataframe(
+                df_exibicao.sort_values(by='Alocacao_R$', ascending=False), 
+                use_container_width=True,
+                hide_index=True # Deixa o visual mais profissional
+            )
 
     with col_graph:
         fig_rebal = px.bar(
