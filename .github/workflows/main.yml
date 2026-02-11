@@ -38,7 +38,7 @@ jobs:
           git config --local user.name "GitHub Action"
           
           # 1. Adiciona TUDO o que foi gerado pelo Python (evita o erro de unstaged changes)
-          git add data_lake/gold/ data_lake/silver/ logs/
+          git add data_lake/gold/*.parquet data_lake/silver/*.parquet logs/*.log
           
           # 2. Tenta commitar. Se não houver nada novo, ele apenas avisa e segue em frente.
           git commit -m "Dados atualizados via Action: $(date +'%Y-%m-%d')" || echo "Sem mudanças para commitar"

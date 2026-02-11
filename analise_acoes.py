@@ -364,4 +364,6 @@ if __name__ == "__main__":
             logging.info("Pipeline de Análise de Ações concluído com sucesso!")
     else:
         logging.warning("Pipeline interrompido por falha na qualidade dos dados.")
-
+    logging.info("--- Pipeline Finalizado com Sucesso ---")
+    logging.shutdown() # Isso força o Python a fechar o arquivo e salvar tudo no disco
+ 
