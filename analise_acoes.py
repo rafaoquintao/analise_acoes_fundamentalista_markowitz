@@ -53,6 +53,7 @@ def buscar_dados_financeiros(tickers: List[str]) -> pd.DataFrame:
             # Coleta segura de dados usando .get() para evitar KeyErrors
             dados_ativo = {
                 "ticker": t,
+                "preco": info.get("currentPrice") or info.get("regularMarketPreviousClose") or 0,
                 "p_l": info.get("forwardPE"),
                 "p_vp": info.get("priceToBook"),
                 "dividend_yield": info.get("dividendYield", 0) * 100 if info.get("dividendYield") else 0,
