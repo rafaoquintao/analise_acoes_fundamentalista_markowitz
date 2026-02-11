@@ -37,18 +37,16 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           
-          # 1. Adiciona TUDO o que foi gerado pelo Python (evita o erro de unstaged changes)
-          git add data_lake/gold/*.parquet data_lake/silver/*.parquet logs/*.log
+          # Comando de diagnóstico: mostra o tamanho do arquivo no console do GitHub
+          ls -lh logs/
+          cat logs/pipeline_analise_acoes.log | head -n 5
           
-          # 2. Tenta commitar. Se não houver nada novo, ele apenas avisa e segue em frente.
-          git commit -m "Dados atualizados via Action: $(date +'%Y-%m-%d')" || echo "Sem mudanças para commitar"
+          git add data_lake/gold/ data_lake/silver/ logs/
           
-          # 3. Faz o pull rebase com estratégia de resolução automática
-          # O -X ours diz: "Se houver conflito no arquivo de dados, mantenha o que o robô acabou de gerar"
+          # Se o log ainda estiver vazio por erro do Python, o commit não falha
+          git commit -m "Dados e logs atualizados: $(date +'%Y-%m-%d')" || exit 0
+          
           git pull origin main --rebase -X ours
-          
-         
-          # 4. Envia com segurança
           git push origin main
 
       - name: Upload Logs

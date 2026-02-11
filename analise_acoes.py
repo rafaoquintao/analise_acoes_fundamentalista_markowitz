@@ -8,11 +8,13 @@ import fundamentus
 import logging
 
 os.makedirs("logs", exist_ok = True)
+log_file = "logs/pipeline_analise_acoes.log"
+
 logging.basicConfig(
     level  = logging.INFO,
     format = "%(asctime)s - %(levelname)s - %(message)s",
     handlers = [
-        logging.FileHandler("logs/pipeline_analise_acoes.log"),
+        logging.FileHandler(log_file, mode='w', encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
