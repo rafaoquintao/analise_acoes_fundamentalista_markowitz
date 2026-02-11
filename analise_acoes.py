@@ -200,7 +200,7 @@ def gerar_ranking_fundamentalista(df_bronze: pd.DataFrame) -> pd.DataFrame:
     # 4. Arredondamento para ficar "bonito" no dashboard
     df['score'] = df['score'].round(2)
 
-    return df[['ticker', 'score', 'p_l', 'dividend_yield']].sort_values(by='score', ascending=False)
+    return df[['ticker', 'score', 'p_l', 'dividend_yield','preco']].sort_values(by='score', ascending=False)
 
 def gerar_carteira_recomendada(df_universo: pd.DataFrame) -> pd.DataFrame:
     """
