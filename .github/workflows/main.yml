@@ -36,9 +36,19 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add data_lake/gold/ logs/
-          git commit -m "Dados atualizados via Action: $(date +'%Y-%m-%d')" || exit 0
-          git push
+          
+          # 1. Adiciona TUDO o que o Python gerou primeiro
+          git add data_lake/gold/ data_lake/silver/ logs/
+          
+          # 2. Faz o pull rebase (Agora ele aceita porque os arquivos estão "staged")
+          # O -X ours diz: "Se houver conflito no dado, mantenha o que o robô acabou de gerar"
+          git pull origin main --rebase -X ours
+          
+          # 3. Tenta commitar. Se não houver nada, ele ignora.
+          git commit -m "Dados atualizados via Action: $(date +'%Y-%m-%d')" || echo "Sem mudanças para commitar"
+          
+          # 4. Envia
+          git push origin main
 
       - name: Upload Logs
         uses: actions/upload-artifact@v4
@@ -46,22 +56,4 @@ jobs:
           name: pipeline-logs
           path: logs/pipeline_analise_acoes.log
           retention-days: 7 # O log apaga sozinho depois de 7 dias
-      - name: Commit and Push changes
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          
-          # 1. Garante que o robô saiba de todas as mudanças remotas
-          git fetch origin main
-          
-          # 2. Adiciona os arquivos gerados (Gold e Logs)
-          git add data_lake/gold/ logs/
-          
-          # 3. Tenta commitar. Se não houver nada novo, ele ignora sem dar erro.
-          git commit -m "Dados atualizados via Action: $(date +'%Y-%m-%d')" || echo "Sem mudanças para commitar"
-          
-          # 4. O segredo: Faz o rebase para colocar o commit do robô no topo do seu
-          git pull origin main --rebase
-          
-          # 5. Agora sim, envia com segurança
-          git push origin main   
+      
