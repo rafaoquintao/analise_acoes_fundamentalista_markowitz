@@ -6,6 +6,7 @@ import os
 from typing import List
 import fundamentus 
 import logging
+import sys
 
 # 1. Garante a pasta
 os.makedirs("logs", exist_ok=True)
