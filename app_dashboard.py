@@ -51,15 +51,6 @@ def obter_cambio_usd_brl():
         return 5.0  # Valor de fallback caso a API falhe
 
 
-# Lógica de Moeda: Se o ticker NÃO termina com .SA e não é BDR (34), assume USD
-def converter_moeda(row):
-    taxa_dolar = obter_cambio_usd_brl()
-    ticker = str(row['ticker'])
-    # Ativos sem .SA e que não são BDRs (ex: AAPL, TSLA, AMZN)
-    if not ticker.endswith('.SA') and not any(char.isdigit() for char in ticker):
-        return row['preco'] * taxa_dolar
-    return row['preco']
-
 st.title("📊 Gestão de Portfólio e Stock Discovery")
 st.markdown("---")
 
@@ -82,6 +73,8 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
 
         # Soma as quantidades se o ticker aparecer mais de uma vez (ex: NU e ROXO34)
         df_custodia = df_custodia.groupby("ticker")["quantidade"].sum().reset_index()
+
+        taxa_dolar = obter_cambio_usd_brl()
 
         # Merge com preços (df_rank deve conter a coluna 'preco')
         df_rebal = pd.merge(
@@ -106,12 +99,23 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
                     p = data[t_procurado].iloc[-1] if isinstance(data, pd.DataFrame) else data.iloc[-1]
                     df_rebal.loc[df_rebal['ticker'] == t_original, 'preco'] = p
                 except: continue
+        # 4. Função de Moeda (Agora enxerga a taxa_dolar)
+        def converter_moeda_local(row):
+            t = str(row['ticker'])
+            # Se não tem número (não é BDR) e não termina em .SA, é Stock em USD (ex: AAPL)
+            if not any(char.isdigit() for char in t) and not t.endswith(".SA"):
+                return row['preco'] * taxa_dolar
+            return row['preco']
 
         df_rebal["preco"] = df_rebal["preco"].fillna(0)
-
-        df_rebal['preco_convertido'] = df_rebal.apply(converter_moeda, axis=1)
+        df_rebal['preco_convertido'] = df_rebal.apply(converter_moeda_local, axis=1)
         df_rebal['Valor_Total_Ativo'] = df_rebal['quantidade'] * df_rebal['preco_convertido']
         total_patrimonio = df_rebal['Valor_Total_Ativo'].sum()
+        
+        df_rebal["Peso_Atual"] = (df_rebal["Valor_Total_Ativo"] / total_patrimonio * 100) if total_patrimonio > 0 else 0
+
+        df_final = pd.merge(df_peso, df_rebal[["ticker", "Peso_Atual", "quantidade"]], on="ticker", how="outer").fillna(0)
+        df_final = df_final.groupby("ticker").agg({"Peso_Ideal": "max", "Peso_Atual": "sum", "quantidade": "sum"}).reset_index()
         
         # Peso Atual
         df_rebal["Peso_Atual"] = (
