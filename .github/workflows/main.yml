@@ -32,21 +32,16 @@ jobs:
           path: data_lake/bronze/   
           retention-days: 7         # Configuração de auto-delete
 
-      - name: Commit and Push changes
+      - name: Commitar e Push dos resultados
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
+          git add -A
+          # O comando abaixo evita que o erro 128 pare o processo
+          git commit -m "Dados e logs atualizados: $(date +'%Y-%m-%d')" || echo "Sem mudanças para commitar"
           
-          # Comando de diagnóstico: mostra o tamanho do arquivo no console do GitHub
-          ls -lh logs/
-          cat logs/pipeline_analise_acoes.log | head -n 5
-          
-          git add data_lake/gold/ data_lake/silver/ logs/
-          
-          # Se o log ainda estiver vazio por erro do Python, o commit não falha
-          git commit -m "Dados e logs atualizados: $(date +'%Y-%m-%d')" || exit 0
-          
-          git pull origin main --rebase -X ours
+          # A solução para o erro: faz um pull rebase ignorando conflitos locais temporários
+          git pull --rebase origin main
           git push origin main
 
       - name: Upload Logs
