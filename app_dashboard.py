@@ -51,6 +51,9 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
         df_custodia = pd.read_csv(PATH_CUSTODIA)
         df_custodia['ticker'] = df_custodia['ticker'].apply(normalizar_ticker)
         
+        # Soma as quantidades se o ticker aparecer mais de uma vez (ex: NU e ROXO34)
+        df_custodia = df_custodia.groupby('ticker')['quantidade'].sum().reset_index()
+
         # Merge com preços (df_rank deve conter a coluna 'preco')
         df_rebal = pd.merge(df_custodia, df_rank[['ticker', 'preco']], on='ticker', how='left')
         df_rebal['preco'] = df_rebal['preco'].fillna(0)
