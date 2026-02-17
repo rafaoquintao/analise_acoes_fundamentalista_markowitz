@@ -2,7 +2,7 @@ name: Pipeline Financeiro Diário
 
 on:
   schedule:
-    - cron: '0 21 * * 1-5' # Roda às 18:00 BRT
+    - cron: '0 22 * * 1-5' # Roda às 18:00 BRT
   workflow_dispatch:
 
 jobs:
