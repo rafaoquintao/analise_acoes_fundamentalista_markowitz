@@ -42,6 +42,21 @@ def normalizar_ticker(t):
         return f"{t}.SA"
     return t
 
+def obter_cambio_usd_brl():
+    """Busca a cotação atual do Dólar para Real via yfinance"""
+    try:
+        usd_brl = yf.Ticker("USDBRL=X")
+        return usd_brl.fast_info['lastPrice']
+    except:
+        return 5.0  # Valor de fallback caso a API falhe
+    
+# Lógica de Moeda: Se o ticker NÃO termina com .SA e não é BDR (34), assume USD
+def converter_moeda(row):
+    ticker = str(row['ticker'])
+    # Ativos sem .SA e que não são BDRs (ex: AAPL, TSLA, AMZN)
+    if not ticker.endswith('.SA') and not any(char.isdigit() for char in ticker):
+        return row['preco'] * taxa_dolar
+    return row['preco']
 
 st.title("📊 Gestão de Portfólio e Stock Discovery")
 st.markdown("---")
@@ -66,6 +81,8 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
         # Soma as quantidades se o ticker aparecer mais de uma vez (ex: NU e ROXO34)
         df_custodia = df_custodia.groupby("ticker")["quantidade"].sum().reset_index()
 
+        taxa_dolar = obter_cambio_usd_brl()
+
         # Merge com preços (df_rank deve conter a coluna 'preco')
         df_rebal = pd.merge(
             df_custodia, df_rank[["ticker", "preco"]], on="ticker", how="left"
@@ -83,27 +100,18 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
 
             data = yf.download(tickers_busca, period="1d", progress=False)["Close"]
 
-            for t_original in tickers_sem_preco:
+            for t in tickers_sem_preco:
                 try:
-                    # Tenta buscar com ou sem .SA conforme o retorno do Yahoo
-                    t_busca = (
-                        t_original
-                        if (".SA" in t_original or len(t_original) > 6)
-                        else f"{t_original}.SA"
-                    )
-                    p = data[t_busca].iloc[-1]
-                    df_rebal.loc[df_rebal["ticker"] == t_original, "preco"] = p
-                except:
-                    continue
+                    p = data[t].iloc[-1] if isinstance(data, pd.DataFrame) else data.iloc[-1]
+                    df_rebal.loc[df_rebal['ticker'] == t, 'preco'] = p
+                except: continue
 
         df_rebal["preco"] = df_rebal["preco"].fillna(0)
 
-        # Valor de Mercado e Patrimônio
-        df_rebal["Valor_Total_Ativo"] = (
-            df_rebal["quantidade"].astype(float) * df_rebal["preco"]
-        )
-        total_patrimonio = df_rebal["Valor_Total_Ativo"].sum()
-
+        df_rebal['preco_convertido'] = df_rebal.apply(converter_moeda, axis=1)
+        df_rebal['Valor_Total_Ativo'] = df_rebal['quantidade'] * df_rebal['preco_convertido']
+        total_patrimonio = df_rebal['Valor_Total_Ativo'].sum()
+        
         # Peso Atual
         df_rebal["Peso_Atual"] = (
             (df_rebal["Valor_Total_Ativo"] / total_patrimonio * 100)
@@ -229,14 +237,13 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
         st.header("3. 🔍 Discovery: Timing de Entrada (RSI)")
         df_timing = pd.read_parquet(PATH_TIMING)
         
-        # Normaliza e Consolida para evitar duplicados (como NU e ROXO34)
+        # 1. Normaliza e remove duplicatas
         df_timing['ticker'] = df_timing['ticker'].apply(normalizar_ticker)
-        
-        # Remove duplicatas mantendo apenas a primeira ocorrência de cada ticker
         df_timing = df_timing.drop_duplicates(subset='ticker', keep='first')
         
+        # 2. Exibição limpa
         def color_status(val):
-            color = '#2ecc71' if 'Compra' in str(val) else '#e74c3c' if 'Venda' in str(val) else 'None'
+            color = '#2ecc71' if 'Compra' in str(val) else '#e74c3c' if 'Venda' in str(val) else "#777474"
             return f'background-color: {color}'
         
         st.dataframe(
