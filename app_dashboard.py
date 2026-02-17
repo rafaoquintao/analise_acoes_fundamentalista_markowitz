@@ -120,8 +120,8 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
         df_timing = pd.read_parquet(PATH_TIMING)
         df_timing['ticker'] = df_timing['ticker'].apply(normalizar_ticker)
         
-        # Merge com df_rank para trazer o P/VP
-        df_timing = pd.merge(df_timing, df_rank[['ticker', 'p_vp']], on='ticker', how='left')
+        # Merge com df_rank para trazer o P/L
+        df_timing = pd.merge(df_timing, df_rank[['ticker', 'p_l']], on='ticker', how='left')
         df_timing = df_timing.drop_duplicates(subset='ticker', keep='last')
 
         def color_status(val):
