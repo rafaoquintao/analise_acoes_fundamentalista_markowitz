@@ -228,21 +228,21 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
         st.divider()
         st.header("3. 🔍 Discovery: Timing de Entrada (RSI)")
         df_timing = pd.read_parquet(PATH_TIMING)
-        df_timing["ticker"] = df_timing["ticker"].apply(normalizar_ticker)
-
+        
+        # Normaliza e Consolida para evitar duplicados (como NU e ROXO34)
+        df_timing['ticker'] = df_timing['ticker'].apply(normalizar_ticker)
+        
+        # Remove duplicatas mantendo apenas a primeira ocorrência de cada ticker
+        df_timing = df_timing.drop_duplicates(subset='ticker', keep='first')
+        
         def color_status(val):
-            color = (
-                "#2ecc71"
-                if "Compra" in str(val)
-                else "#e74c3c" if "Venda" in str(val) else "None"
-            )
-            return f"background-color: {color}"
-
+            color = '#2ecc71' if 'Compra' in str(val) else '#e74c3c' if 'Venda' in str(val) else 'None'
+            return f'background-color: {color}'
+        
         st.dataframe(
-            df_timing[["ticker", "rsi", "status"]].style.applymap(
-                color_status, subset=["status"]
-            ),
+            df_timing[['ticker', 'rsi', 'status']].style.applymap(color_status, subset=['status']),
             use_container_width=True,
+            hide_index=True
         )
 
     # --- VISÃO 4: BACKTEST ---
@@ -269,3 +269,12 @@ else:
     )
 
 st.sidebar.info("Atualizado em: " + pd.Timestamp.now().strftime("%d/%m/%Y %H:%M"))
+
+# --- DEBUG DE PATRIMÔNIO (TEMPORÁRIO) ---
+with st.expander("Verificar itens com preço zerado"):
+    itens_zerados = df_rebal[df_rebal['preco'] == 0]
+    if not itens_zerados.empty:
+        st.write("Estes ativos estão valendo R$ 0 no cálculo:")
+        st.table(itens_zerados[['ticker', 'quantidade']])
+    else:
+        st.success("Todos os ativos foram precificados!")
