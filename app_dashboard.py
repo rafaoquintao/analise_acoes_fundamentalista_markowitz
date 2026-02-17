@@ -94,16 +94,17 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
         if tickers_sem_preco:
 
             tickers_busca = [
-                t if (".SA" in t or len(t) > 6) else f"{t}.SA"
+                t if (".SA" in t or len(t) > 5) else f"{t}.SA"
                 for t in tickers_sem_preco
             ]
 
             data = yf.download(tickers_busca, period="1d", progress=False)["Close"]
 
-            for t in tickers_sem_preco:
+            for t_original in tickers_sem_preco:
                 try:
-                    p = data[t].iloc[-1] if isinstance(data, pd.DataFrame) else data.iloc[-1]
-                    df_rebal.loc[df_rebal['ticker'] == t, 'preco'] = p
+                    t_procurado = t_original if (".SA" in t_original or len(t_original) > 5) else f"{t_original}.SA"
+                    p = data[t_procurado].iloc[-1] if isinstance(data, pd.DataFrame) else data.iloc[-1]
+                    df_rebal.loc[df_rebal['ticker'] == t_original, 'preco'] = p
                 except: continue
 
         df_rebal["preco"] = df_rebal["preco"].fillna(0)
@@ -239,7 +240,7 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
         
         # 1. Normaliza e remove duplicatas
         df_timing['ticker'] = df_timing['ticker'].apply(normalizar_ticker)
-        df_timing = df_timing.drop_duplicates(subset='ticker', keep='first')
+        df_timing = df_timing.drop_duplicates(subset='ticker', keep='last')
         
         # 2. Exibição limpa
         def color_status(val):
