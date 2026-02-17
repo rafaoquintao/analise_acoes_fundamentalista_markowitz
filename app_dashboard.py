@@ -37,7 +37,7 @@ def obter_cambio_usd_brl():
         usd_brl = yf.Ticker("USDBRL=X")
         return usd_brl.fast_info['lastPrice']
     except:
-        return 5.10  # Fallback mais atualizado
+        return 5.10  # Fallback realista
 
 st.title("📊 Gestão de Portfólio e Stock Discovery")
 st.markdown("---")
@@ -49,30 +49,34 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
     df_rank["ticker"] = df_rank["ticker"].apply(normalizar_ticker)
     df_peso["ticker"] = df_peso["ticker"].apply(normalizar_ticker)
 
+    # --- PROCESSAMENTO DE CUSTÓDIA ---
     if os.path.exists(PATH_CUSTODIA):
         df_custodia = pd.read_csv(PATH_CUSTODIA)
         df_custodia["ticker"] = df_custodia["ticker"].apply(normalizar_ticker)
         df_custodia = df_custodia.groupby("ticker")["quantidade"].sum().reset_index()
 
+        # 1. Definir taxa antes de usar na função
         taxa_dolar = obter_cambio_usd_brl()
 
-        # Merge com preços
+        # 2. Merge com preços da Gold
         df_rebal = pd.merge(df_custodia, df_rank[["ticker", "preco"]], on="ticker", how="left")
 
-        # Busca preços faltantes individualmente (evita falha em lote)
+        # 3. Busca preços faltantes (Individualizado para maior precisão)
         tickers_sem_preco = df_rebal[df_rebal["preco"].isnull() | (df_rebal["preco"] == 0)]["ticker"].tolist()
         if tickers_sem_preco:
             for t in tickers_sem_preco:
                 try:
-                    p = yf.Ticker(t).fast_info['lastPrice']
+                    obj = yf.Ticker(t)
+                    p = obj.fast_info['lastPrice']
                     if (p is None or p == 0) and ".SA" not in t:
                         p = yf.Ticker(f"{t}.SA").fast_info['lastPrice']
                     df_rebal.loc[df_rebal['ticker'] == t, 'preco'] = p
                 except: continue
 
-        # Lógica de Moeda Corrigida
+        # 4. Função de Moeda (Agora enxerga a taxa_dolar)
         def converter_moeda_local(row):
             t = str(row['ticker'])
+            # Se não tem número (não é BDR) e não termina em .SA, é Stock em USD (ex: AAPL)
             if not any(char.isdigit() for char in t) and not t.endswith(".SA"):
                 return row['preco'] * taxa_dolar
             return row['preco']
@@ -84,44 +88,45 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
         
         df_rebal["Peso_Atual"] = (df_rebal["Valor_Total_Ativo"] / total_patrimonio * 100) if total_patrimonio > 0 else 0
 
-        # Merge único com Markowitz
         df_final = pd.merge(df_peso, df_rebal[["ticker", "Peso_Atual", "quantidade"]], on="ticker", how="outer").fillna(0)
         df_final = df_final.groupby("ticker").agg({"Peso_Ideal": "max", "Peso_Atual": "sum", "quantidade": "sum"}).reset_index()
     else:
-        st.error("Custódia não encontrada.")
+        st.error("Arquivo de custódia não encontrado.")
         df_final, total_patrimonio = df_peso.copy(), 0
 
     df_final["Diferenca"] = df_final["Peso_Ideal"] - df_final["Peso_Atual"]
     df_total = pd.merge(df_final, df_rank, on="ticker", how="inner")
 
     # --- VISÃO 1: MÉTRICAS ---
-    st.header("1. ⚖️ Rebalanceamento")
+    st.header("1. ⚖️ Rebalanceamento e Simulação de Aporte")
     m1, m2, m3 = st.columns(3)
     m1.metric("Patrimônio Total", f"R$ {total_patrimonio:,.2f}")
     if not df_final.empty:
-        m2.metric("Aportar em", df_final.loc[df_final["Diferenca"].idxmax(), "ticker"])
-        m3.metric("Reduzir em", df_final.loc[df_final["Diferenca"].idxmin(), "ticker"])
+        m2.metric("Aportar em (Maior Gap)", df_final.loc[df_final["Diferenca"].idxmax(), "ticker"])
+        m3.metric("Reduzir em (Maior Excesso)", df_final.loc[df_final["Diferenca"].idxmin(), "ticker"])
 
-    col_sim, col_graph = st.columns([1, 2])
+    col_sim, col_graph = st.columns([1.2, 2])
     with col_sim:
-        valor_aporte = st.number_input("Valor do aporte (R$):", min_value=0.0, value=1000.0)
-        df_compra = df_final[df_final["Diferenca"] > 0].copy()
-        if not df_compra.empty and valor_aporte > 0:
-            total_gap = df_compra["Diferenca"].sum()
-            df_compra["Alocacao_R$"] = (df_compra["Diferenca"] / total_gap) * valor_aporte
-            df_compra = pd.merge(df_compra, df_rank[["ticker", "preco"]], on="ticker")
-            df_compra["Qtd"] = (df_compra["Alocacao_R$"] / df_compra["preco"]).fillna(0).astype(int)
-            st.dataframe(df_compra.query("Qtd > 0")[["ticker", "Qtd", "Alocacao_R$"]], hide_index=True)
+        st.subheader("Simulador de Aporte")
+        valor_aporte = st.number_input("Valor para investir (R$):", min_value=0.0, value=1000.0, step=100.0)
+        df_compra_sug = df_final[df_final["Diferenca"] > 0].copy()
+        if not df_compra_sug.empty and valor_aporte > 0:
+            total_gap = df_compra_sug["Diferenca"].sum()
+            df_compra_sug["Alocacao_R$"] = (df_compra_sug["Diferenca"] / total_gap) * valor_aporte
+            df_compra_sug = pd.merge(df_compra_sug, df_rank[["ticker", "preco"]], on="ticker")
+            df_compra_sug["Qtd_Sugerida"] = (df_compra_sug["Alocacao_R$"] / df_compra_sug["preco"]).fillna(0).astype(int)
+            st.dataframe(df_compra_sug.query("Qtd_Sugerida > 0")[["ticker", "Qtd_Sugerida", "Alocacao_R$"]], hide_index=True)
 
     with col_graph:
         st.plotly_chart(px.bar(df_final.sort_values(by="Diferenca", ascending=False), x="ticker", y="Diferenca", color="Diferenca", color_continuous_scale="RdYlGn"), use_container_width=True)
 
-    # --- VISÃO 3: TIMING (RSI) ---
+    # --- VISÃO 3: TIMING (RSI) --- CORREÇÃO DE DUPLICIDADE ---
     if os.path.exists(PATH_TIMING):
         st.divider()
-        st.header("3. 🔍 Discovery: Timing (RSI)")
+        st.header("3. 🔍 Discovery: Timing de Entrada (RSI)")
         df_timing = pd.read_parquet(PATH_TIMING)
         df_timing['ticker'] = df_timing['ticker'].apply(normalizar_ticker)
+        # O PULO DO GATO: Normalizar e depois remover duplicatas
         df_timing = df_timing.drop_duplicates(subset='ticker', keep='last')
         
         st.dataframe(df_timing[['ticker', 'rsi', 'status']].style.applymap(lambda x: f'background-color: {"#2ecc71" if "Compra" in str(x) else "#e74c3c" if "Venda" in str(x) else "#777474"}', subset=['status']), use_container_width=True, hide_index=True)
@@ -129,8 +134,13 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
     # --- VISÃO 4: BACKTEST ---
     if os.path.exists(PATH_BACKTEST):
         st.divider()
-        st.header("📈 Performance Histórica")
+        st.header("📈 Backtest: Performance Histórica")
         st.plotly_chart(px.line(pd.read_parquet(PATH_BACKTEST)).update_layout(hovermode="x unified"), use_container_width=True)
 
-with st.expander("Debug: Itens Zerados"):
-    st.table(df_rebal[df_rebal['preco'] == 0][['ticker', 'quantidade']])
+# --- DEBUG ---
+with st.expander("Verificar itens com preço zerado"):
+    itens_zerados = df_rebal[df_rebal['preco'] == 0]
+    if not itens_zerados.empty:
+        st.table(itens_zerados[['ticker', 'quantidade']])
+    else:
+        st.success("Todos os ativos foram precificados!")
