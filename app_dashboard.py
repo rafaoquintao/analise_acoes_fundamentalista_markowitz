@@ -107,6 +107,14 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
                     df_rebal.loc[df_rebal['ticker'] == t_original, 'preco'] = p
                 except: continue
 
+        # Lógica de Moeda: Se o ticker NÃO termina com .SA e não é BDR (34), assume USD
+        def converter_moeda(row):
+            ticker = str(row['ticker'])
+            # Ativos sem .SA e que não são BDRs (ex: AAPL, TSLA, AMZN)
+            if not ticker.endswith('.SA') and not any(char.isdigit() for char in ticker):
+                return row['preco'] * taxa_dolar
+            return row['preco']
+
         df_rebal["preco"] = df_rebal["preco"].fillna(0)
 
         df_rebal['preco_convertido'] = df_rebal.apply(converter_moeda, axis=1)
