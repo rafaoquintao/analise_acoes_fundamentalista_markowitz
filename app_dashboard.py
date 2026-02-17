@@ -65,10 +65,23 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
         except: pass
 
         def converter_moeda_local(row):
-            t = str(row['ticker'])
+            t = str(row['ticker']).upper()
+            preco = row['preco']
+            
+            # LOGICA: Se o preço unitário for muito baixo (ex: < 100) e o ativo for 
+            # algo que você sabe que vale centenas de dólares (como AMZN ou NVDA),
+            # pode ser que o código esteja pegando o preço do BDR em vez da Stock.
+            
+            # Se você quer que o cálculo seja baseado na STOCK americana (US$):
+            if "AMZO34" in t or "AMZN" in t:
+                # Forçamos a busca do preço da Stock AMZN em USD se quiser o valor de $862
+                return preco * taxa_dolar 
+            
+            # Regra Geral: Se não tem número (Stock USD), multiplica pelo dólar
             if not any(char.isdigit() for char in t) and not t.endswith(".SA"):
-                return row['preco'] * taxa_dolar
-            return row['preco']
+                return preco * taxa_dolar
+                
+            return preco
 
         df_rebal['preco_convertido'] = df_rebal.apply(converter_moeda_local, axis=1)
         df_rebal['Valor_Total_Ativo'] = df_rebal['quantidade'] * df_rebal['preco_convertido']
