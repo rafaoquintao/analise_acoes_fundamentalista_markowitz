@@ -32,21 +32,21 @@ jobs:
           path: data_lake/bronze/   
           retention-days: 7         # Configuração de auto-delete
 
-      - name: Commit and Push changes
+      - name: Sincronizar e Salvar Dados
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
           
-          # Comando de diagnóstico: mostra o tamanho do arquivo no console do GitHub
-          ls -lh logs/
-          cat logs/pipeline_analise_acoes.log | head -n 5
+          # 1. Adiciona todas as mudanças geradas (novos parquets/csvs)
+          git add -A 
           
-          git add data_lake/gold/ data_lake/silver/ logs/
+          # 2. Faz um commit preventivo para "limpar" o estágio
+          git commit -m "Auto: atualização de dados via pipeline" || true 
           
-          # Se o log ainda estiver vazio por erro do Python, o commit não falha
-          git commit -m "Dados e logs atualizados: $(date +'%Y-%m-%d')" || exit 0
+          # 3. Pull com rebase priorizando as mudanças locais (estratégia ours)
+          git pull origin main --rebase -X ours 
           
-          git pull origin main --rebase -X ours
+          # 4. Push final para o repositório
           git push origin main
 
       - name: Upload Logs
