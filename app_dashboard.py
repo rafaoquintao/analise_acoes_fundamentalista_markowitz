@@ -67,6 +67,12 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
         
         # Merge final com Markowitz
         df_final = pd.merge(df_peso, df_rebal[['ticker', 'Peso_Atual', 'quantidade']], on='ticker', how='outer').fillna(0)
+        df_final = df_final.groupby('ticker').agg({
+            'Peso_Ideal': 'max',   # Mantém o peso sugerido pelo modelo
+            'Peso_Atual': 'sum',   # Soma os pesos caso haja duplicata residual
+            'quantidade': 'sum'    # Soma as quantidades totais
+        }).reset_index()
+
     else:
         st.error(f"Arquivo de custódia não encontrado em: {PATH_CUSTODIA}")
         df_final = df_peso.copy()
@@ -132,8 +138,9 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
     st.divider()
     st.header("2. 🎯 Matriz de Decisão Fundamentalista")
     
+    df_scatter = df_total.drop_duplicates(subset='ticker')
     fig_decisao = px.scatter(
-        df_total, x='score', y='Peso_Ideal',
+        df_scatter, x='score', y='Peso_Ideal',
         size='dividend_yield', text='ticker', color='Diferenca',
         color_continuous_scale='RdYlGn',
         title="Score Fundamentos vs Alocação Sugerida",
