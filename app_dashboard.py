@@ -129,7 +129,7 @@ if os.path.exists(PATH_RANKING) and os.path.exists(PATH_PESOS):
             return f'background-color: {color}'
 
         st.dataframe(
-            df_timing[['ticker', 'rsi', 'p_vp', 'status']].style.applymap(color_status, subset=['status']).format({"p_vp": "{:.2f}"}),
+            df_timing[['ticker', 'rsi', 'p_l', 'status']].style.applymap(color_status, subset=['status']).format({"p_l": "{:.2f}"}),
             use_container_width=True, hide_index=True
         )
 
